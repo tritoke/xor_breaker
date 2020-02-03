@@ -1,8 +1,11 @@
-# don't commit any decrypted files
+# decrypted files
 decrypted*
 
-# don't commit exes
+# final executable
 xor_breaker
+
+# test input
+6.txt
 
 dist
 dist-*

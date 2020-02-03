@@ -1,4 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections #-}
+
 import           Data.Bits              (popCount, xor, (.&.))
 import           Data.ByteString.Base64 (decodeLenient)
 import           Data.ByteString.Char8  (ByteString)
@@ -7,9 +9,7 @@ import qualified Data.Char              as C
 import           Data.Function          (on)
 import qualified Data.IntMap.Strict     as IntMap
 import           Data.List.Extra        (maximumOn, minimumOn)
-import           Data.Tuple.Extra       (first, (&&&))
-
-import           System.Directory       (doesFileExist)
+import           Data.Tuple.Extra       (first, second, (&&&))
 
 import           Options.Applicative
 import           Data.Semigroup         ((<>))
@@ -44,35 +44,29 @@ main = decrypt =<< execParser opts
 decrypt :: Args -> IO ()
 decrypt (Args fname outname base64) = do
   raw <- C8.readFile fname
-  let enc = case base64 of
-              True -> decodeLenient raw
-              False -> raw
 
-  C8.writeFile outname $ breakXOR enc
-  putStrLn $ "Decrypted using key: " ++ show (getKey enc)
+  let enc = if base64
+              then decodeLenient raw
+              else raw
 
-getKey :: ByteString -> String
-getKey enc = map getKeyForBlock . C8.transpose . chunksOf keylen $ enc
-  where
-    keylen = minimumOn (scoreKeyLen enc) [2..40]
+  let (key, dec) = breakXOR enc
+  C8.writeFile outname dec
+  putStrLn $ "Decrypted using key: \"" ++ key ++ "\""
 
-getKeyForBlock :: ByteString -> Char
-getKeyForBlock enc = C.chr $ maximumOn (score . flip xorByte enc) [0..0x100]
-
-breakXOR :: ByteString -> ByteString
-breakXOR enc = C8.concat
-               . C8.transpose
+breakXOR :: ByteString -> (String, ByteString)
+breakXOR enc = second (C8.concat . C8.transpose)
+               . unzip
                . map break1
                . C8.transpose
                . chunksOf keylen $ enc
   where
     keylen = minimumOn (scoreKeyLen enc) [2..40]
 
-break1 :: ByteString -> ByteString
-break1 = maximumOn score . zipWith xorByte [0..0x100] . repeat
+break1 :: ByteString -> (Char, ByteString)
+break1 = maximumOn (score . snd) . zipWith xorByte [0..0x100] . repeat
 
-xorByte :: Int -> ByteString -> ByteString
-xorByte byte = C8.map (C.chr . xor byte . C.ord)
+xorByte :: Int -> ByteString -> (Char, ByteString)
+xorByte byte = (C.chr byte,) . C8.map (C.chr . xor byte . C.ord)
 
 score :: ByteString -> Int
 score = uncurry (+) . (letterScore &&& unprintableScore) . C8.unpack
