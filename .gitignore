@@ -1,3 +1,9 @@
+# don't commit any decrypted files
+decrypted*
+
+# don't commit exes
+xor_breaker
+
 dist
 dist-*
 cabal-dev
