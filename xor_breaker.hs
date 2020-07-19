@@ -15,9 +15,11 @@ import           Options.Applicative
 import           Data.Semigroup         ((<>))
 
 data Args = Args
-  { fname    :: FilePath
-  , outname  :: FilePath
-  , base64 :: Bool }
+  { fname      :: FilePath
+  , outname    :: FilePath
+  , min_keylen :: Int
+  , max_keylen :: Int
+  , base64     :: Bool }
 
 args :: Parser Args
 args = Args
@@ -28,7 +30,20 @@ args = Args
      <> short 'o'
      <> metavar "OUTFILE"
      <> value "decrypted.txt"
+     <> showDefault
      <> help "The file to output the decrypted contents to." )
+  <*> option auto
+      ( long "min_keylen"
+     <> metavar "MIN_KEYLEN"
+     <> value 2
+     <> showDefault
+     <> help "The minimum length of key to search for." )
+  <*> option auto
+      ( long "max_keylen"
+     <> metavar "MAX_KEYLEN"
+     <> value 40
+     <> showDefault
+     <> help "The maximum length of key to search for." )
   <*> switch
       ( long "base64"
      <> short 'b'
@@ -42,25 +57,25 @@ main = decrypt =<< execParser opts
      <> progDesc "Decrypt a file encrypted with repeating key XOR." )
 
 decrypt :: Args -> IO ()
-decrypt (Args fname outname base64) = do
+decrypt (Args fname outname min_keylen max_keylen base64) = do
   raw <- C8.readFile fname
 
   let enc = if base64
               then decodeLenient raw
               else raw
 
-  let (key, dec) = breakXOR enc
+  let (key, dec) = breakXOR min_keylen max_keylen enc
   C8.writeFile outname dec
   putStrLn $ "Decrypted using key: \"" ++ key ++ "\""
 
-breakXOR :: ByteString -> (String, ByteString)
-breakXOR enc = second (C8.concat . C8.transpose)
-               . unzip
-               . map break1
-               . C8.transpose
-               . chunksOf keylen $ enc
+breakXOR :: Int -> Int -> ByteString -> (String, ByteString)
+breakXOR kmin kmax enc = second (C8.concat . C8.transpose)
+                         . unzip
+                         . map break1
+                         . C8.transpose
+                         . chunksOf keylen $ enc
   where
-    keylen = minimumOn (scoreKeyLen enc) [2..40]
+    keylen = minimumOn (scoreKeyLen enc) [kmin..kmax]
 
 break1 :: ByteString -> (Char, ByteString)
 break1 = maximumOn (score . snd) . zipWith xorByte [0..0x100] . repeat
